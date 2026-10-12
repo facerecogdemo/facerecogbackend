@@ -1,4 +1,5 @@
 import os
+import math
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from uuid import UUID
@@ -148,6 +149,21 @@ async def register(
         "person_id": person_id,
     }
 
+def cosine_similarity(
+    first: list[float],
+    second: list[float],
+) -> float:
+    if len(first) != len(second) or not first:
+        return -1.0
+
+    dot_product = sum(a * b for a, b in zip(first, second))
+    norm_first = math.sqrt(sum(a * a for a in first))
+    norm_second = math.sqrt(sum(b * b for b in second))
+
+    if norm_first == 0 or norm_second == 0:
+        return -1.0
+
+    return dot_product / (norm_first * norm_second)
 
 @app.post("/recognize")
 async def recognize(
@@ -164,15 +180,17 @@ async def recognize(
 
     raw_image = await read_image(image)
 
+    # Get the face embedding from the separate model service.
     query_embedding = await get_face_embedding(raw_image)
 
     best_person = None
     best_score = -1.0
 
+    # Fetch registered face embeddings from the database.
     registered_faces = get_registered_faces()
 
     for person_id, name, stored_embedding in registered_faces:
-        score = app.state.face_model.similarity(
+        score = cosine_similarity(
             query_embedding,
             stored_embedding,
         )
@@ -181,6 +199,7 @@ async def recognize(
             best_person = (person_id, name)
             best_score = score
 
+    # Record attendance if a matching face is found.
     if best_person and best_score >= MATCH_THRESHOLD:
         person_id, name = best_person
 
@@ -201,6 +220,7 @@ async def recognize(
             "attendance_recorded": inserted,
         }
 
+    # Face was not recognized. Allow one retry.
     retry_attempts[session_id] += 1
     attempts = retry_attempts[session_id]
 
@@ -211,16 +231,14 @@ async def recognize(
             "similarity": round(best_score, 4),
         }
 
+    # Retry failed. Clear the session's retry state.
     retry_attempts.pop(session_id, None)
 
     return {
         "status": "register_required",
-        "message": (
-            "Face not recognized after retry. Please register."
-        ),
+        "message": "Face not recognized after retry. Please register.",
         "similarity": round(best_score, 4),
     }
-
 
 @app.get("/admin/attendance")
 def admin_attendance(
