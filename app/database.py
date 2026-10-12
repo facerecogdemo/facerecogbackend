@@ -74,19 +74,19 @@ def register_person(name, records):
 
         person_id = row[0]
 
-        conn.executemany(
-            """
-            INSERT INTO face_images (person_id, image, embedding)
-            VALUES (%s, %s, %s)
-            """,
-            [
-                (person_id, image, Jsonb(embedding))
-                for image, embedding in records
-            ],
-        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO face_images (person_id, image, embedding)
+                VALUES (%s, %s, %s)
+                """,
+                [
+                    (person_id, image, Jsonb(embedding))
+                    for image, embedding in records
+                ],
+            )
 
         return person_id
-
 
 def get_registered_faces():
     with get_connection() as conn:
