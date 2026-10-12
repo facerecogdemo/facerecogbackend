@@ -2,6 +2,8 @@ import os
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from uuid import UUID
+import httpx
+from fastapi import HTTPException
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +15,6 @@ from app.database import (
     record_attendance,
     register_person,
 )
-from model.face_model import FaceModel
 
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
@@ -28,7 +29,6 @@ retry_attempts = defaultdict(int)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    app.state.face_model = FaceModel()
     yield
 
 
@@ -136,14 +136,7 @@ async def register(
     for upload in images:
         raw_image = await read_image(upload)
 
-        try:
-            embedding = app.state.face_model.get_embedding(raw_image)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=str(exc),
-            ) from exc
-
+        embedding = await get_face_embedding(raw_image)
         records.append((raw_image, embedding))
 
     person_id = register_person(name, records)
@@ -171,13 +164,7 @@ async def recognize(
 
     raw_image = await read_image(image)
 
-    try:
-        query_embedding = app.state.face_model.get_embedding(raw_image)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
+    query_embedding = await get_face_embedding(raw_image)
 
     best_person = None
     best_score = -1.0
@@ -254,3 +241,62 @@ def admin_attendance(
             for person_id, name, day, timestamp in rows
         ]
     }
+
+
+FACE_SERVICE_URL = os.environ["FACE_SERVICE_URL"].rstrip("/")
+FACE_SERVICE_TOKEN = os.environ["FACE_SERVICE_TOKEN"]
+
+
+async def get_face_embedding(image_bytes: bytes) -> list[float]:
+    headers = {
+        "Authorization": f"Bearer {FACE_SERVICE_TOKEN}"
+    }
+
+    timeout = httpx.Timeout(15.0, connect=5.0)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{FACE_SERVICE_URL}/embedding",
+                headers=headers,
+                files={
+                    "image": (
+                        "face.jpg",
+                        image_bytes,
+                        "image/jpeg",
+                    )
+                },
+            )
+
+        if response.status_code == 400:
+            detail = response.json().get(
+                "detail", "Invalid face image."
+            )
+            raise HTTPException(status_code=400, detail=detail)
+
+        response.raise_for_status()
+        result = response.json()
+
+        if result.get("status") != "success":
+            raise HTTPException(
+                status_code=502,
+                detail="Face recognition service returned an invalid response.",
+            )
+
+        embedding = result.get("embedding")
+
+        if not isinstance(embedding, list) or not embedding:
+            raise HTTPException(
+                status_code=502,
+                detail="Face recognition service returned no embedding.",
+            )
+
+        return embedding
+
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Face recognition service is unavailable.",
+        ) from exc
