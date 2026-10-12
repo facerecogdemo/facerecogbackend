@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+python-multipart
+opencv-contrib-python-headless
+numpy
+psycopg[binary]
