@@ -68,11 +68,11 @@ def register_person(name, records):
     with get_connection() as conn:
         row = conn.execute(
             """
-            INSERT INTO persons (name)
-            VALUES (%s)
+            INSERT INTO persons (name, role)
+            VALUES (%s, %s)
             RETURNING id
             """,
-            (name,),
+            (name,role),
         ).fetchone()
 
         person_id = row[0]
@@ -101,6 +101,95 @@ def get_registered_faces():
             ORDER BY p.id, f.id
         """).fetchall()
 
+def get_person_by_id(person_id):
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT id, name, role, is_active, created_at
+            FROM persons
+            WHERE id = %s
+        """, (person_id,)).fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "name": row[1],
+        "role": row[2],
+        "is_active": row[3],
+        "created_at": row[4].isoformat(),
+    }
+
+def get_all_users():
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT id, name, role, is_active, created_at
+            FROM persons
+            ORDER BY id
+        """).fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "name": row[1],
+            "role": row[2],
+            "is_active": row[3],
+            "created_at": row[4].isoformat(),
+        }
+        for row in rows
+    ]
+
+
+def count_active_admins():
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT COUNT(*)
+            FROM persons
+            WHERE role = 'admin'
+              AND is_active = TRUE
+        """).fetchone()
+
+    return row[0]
+
+
+def update_user_role(person_id, role):
+    if role not in ("admin", "user"):
+        raise ValueError("Invalid role")
+
+    with get_connection() as conn:
+        row = conn.execute("""
+            UPDATE persons
+            SET role = %s
+            WHERE id = %s
+            RETURNING id
+        """, (role, person_id)).fetchone()
+
+    return row is not None
+
+
+def update_user_status(person_id, is_active):
+    with get_connection() as conn:
+        row = conn.execute("""
+            UPDATE persons
+            SET is_active = %s
+            WHERE id = %s
+            RETURNING id
+        """, (is_active, person_id)).fetchone()
+
+    return row is not None
+
+
+def delete_person(person_id):
+    # Existing foreign keys use ON DELETE CASCADE:
+    # deleting a person also deletes their face images and attendance.
+    with get_connection() as conn:
+        row = conn.execute("""
+            DELETE FROM persons
+            WHERE id = %s
+            RETURNING id
+        """, (person_id,)).fetchone()
+
+    return row is not None
 
 def record_attendance(person_id):
     with get_connection() as conn:
