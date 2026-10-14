@@ -29,6 +29,9 @@ def init_db():
             CREATE TABLE IF NOT EXISTS persons (
                 id BIGSERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
+                role VARCHAR(20) NOT NULL DEFAULT 'user'
+                    CHECK (role IN ('admin', 'user')),
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
@@ -94,6 +97,7 @@ def get_registered_faces():
             SELECT p.id, p.name, f.embedding
             FROM persons p
             JOIN face_images f ON f.person_id = p.id
+            WHERE p.is_active = TRUE
             ORDER BY p.id, f.id
         """).fetchall()
 
