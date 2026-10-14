@@ -94,7 +94,7 @@ def register_person(name, records):
 def get_registered_faces():
     with get_connection() as conn:
         return conn.execute("""
-            SELECT p.id, p.name, f.embedding
+            SELECT p.id, p.name, p.role, f.embedding
             FROM persons p
             JOIN face_images f ON f.person_id = p.id
             WHERE p.is_active = TRUE
