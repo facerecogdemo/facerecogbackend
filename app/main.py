@@ -229,7 +229,7 @@ async def register(
     name = validate_name(name)
     records = await prepare_face_records(images)
 
-    person_id = register_person(name, records)
+    person_id = register_person(name, records, "user")
 
     return {
         "status": "success",
@@ -376,7 +376,7 @@ async def admin_register_user(
     name = validate_name(name)
     records = await prepare_face_records(images)
 
-    person_id = register_person(name, records)
+    person_id = register_person(name, records, role)
     person = get_person_by_id(person_id)
 
     return {
