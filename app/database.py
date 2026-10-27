@@ -64,7 +64,7 @@ def init_db():
         """)
 
 
-def register_person(name, records):
+def register_person(name, records, role):
     with get_connection() as conn:
         row = conn.execute(
             """
